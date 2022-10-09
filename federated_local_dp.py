@@ -12,7 +12,7 @@ from tqdm import tqdm
 import torch.distributions as tdist
 
 import torch
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from torch.autograd import Variable
 
 from options import args_parser

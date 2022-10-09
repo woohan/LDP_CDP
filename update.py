@@ -5,7 +5,7 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
-from torchdp import PrivacyEngine
+from opacus import PrivacyEngine
 import copy
 import statistics
 
@@ -145,17 +145,19 @@ class LocalUpdate(object):
 
             optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
                                         momentum=0.5)
-            privacy_engine = PrivacyEngine(
-                model,
-                self.trainloader,
-                alphas=[1 + x / 10.0 for x in range(1, 100)] + list(range(12, 64)),
-                noise_multiplier=0.65,
+            privacy_engine = PrivacyEngine()
+            model, optimizer, data_loader = privacy_engine.make_private(
+                # model,
+                # self.trainloader,
+                # alphas=[1 + x / 10.0 for x in range(1, 100)] + list(range(12, 64)),
+                # noise_multiplier=0.65,
+                # max_grad_norm=1.0,
+                module=model,
+                optimizer=optimizer,
+                data_loader=self.trainloader,
+                noise_multiplier=1.1,
                 max_grad_norm=1.0,
             )
-
-            privacy_engine.attach(optimizer)
-
-
 
         elif self.args.optimizer == 'adam':
             optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
@@ -163,10 +165,10 @@ class LocalUpdate(object):
 
         for iter in range(self.args.local_ep):
             batch_loss = []
-            for batch_idx, (images, labels) in enumerate(self.trainloader):
+            for batch_idx, (images, labels) in enumerate(data_loader):
                 images, labels = images.to(self.device), labels.to(self.device)
 
-                model.zero_grad()
+                optimizer.zero_grad()
                 log_probs = model(images)
                 loss = self.criterion(log_probs, labels)
                 loss.backward()
@@ -181,16 +183,17 @@ class LocalUpdate(object):
                 batch_loss.append(loss.item())
             epoch_loss.append(sum(batch_loss) / len(batch_loss))
 
-            epsilon, best_alpha = optimizer.privacy_engine.get_privacy_spent(
+            epsilon= privacy_engine.get_epsilon(
                 args.delta
             )
             print(
-                f"(Ɛ = {epsilon}, 𝛿 = {args.delta}) for α = {best_alpha}"
+                f"(Ɛ = {epsilon}, 𝛿 = {args.delta})"
             )
             # if epsilon > args.epsilon:
             #     break
+        model_standard = model.to_standard_module()
 
-        return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
+        return model_standard.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
     def inference(self, model):
         """ Returns the inference accuracy and loss.
